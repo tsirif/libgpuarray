@@ -196,10 +196,6 @@ static inline int check_restrictions(gpudata *src, size_t offsrc,
                                      ncclDataType_t *datatype,
                                      ncclRedOp_t *op) {
   size_t op_size;
-  // Check if count is larger than INT_MAX
-  // TODO remove whenif nccl adapts to size_t
-  if (count > INT_MAX)
-    return error_set(comm->ctx->err, GA_XLARGE_ERROR, "Count too large for int");
   // src, dest and comm must refer to the same context
   if (src->ctx != comm->ctx)
     return error_set(comm->ctx->err, GA_VALUE_ERROR, "source and comm context differ");

@@ -50,10 +50,10 @@ typedef unsigned long ulong;
     printf("\n");                  \
     printf("\n");                  \
   } while (0)
-#define PRINTVF(ar, N) PRINTV(ar, N, %.2f)
-#define PRINTVI(ar, N) PRINTV(ar, N, %i)
-#define PRINTVL(ar, N) PRINTV(ar, N, %li)
-#define PRINTVUL(ar, N) PRINTV(ar, N, %lu)
+#define PRINTVF(ar, N) PRINTV(ar, N, % .2f)
+#define PRINTVI(ar, N) PRINTV(ar, N, % i)
+#define PRINTVL(ar, N) PRINTV(ar, N, % li)
+#define PRINTVUL(ar, N) PRINTV(ar, N, % lu)
 
 /*******************************************************************************
 *                Test helper buffer functions for collectives                 *
@@ -79,24 +79,40 @@ END_TEST
 *                      Test buffer collective functions                       *
 *******************************************************************************/
 
-#define INIT_ARRAYS(insize, outsize)                              \
-  int err;                                                        \
-  void* Av, * RESv, * EXPv;                                       \
-  gpudata* Adev, *RESdev;                                         \
-                                                                  \
-  Av = calloc((insize), sizeof(char));                            \
-  if (Av == NULL)                                                 \
-    ck_abort_msg("system memory allocation failed");              \
-  RESv = calloc((outsize), sizeof(char));                         \
-  if (RESv == NULL)                                               \
-    ck_abort_msg("system memory allocation failed");              \
-  EXPv = calloc((outsize), sizeof(char));                         \
-  if (EXPv == NULL)                                               \
-    ck_abort_msg("system memory allocation failed");              \
-  Adev = gpudata_alloc(ctx, (insize), NULL, 0, &err);             \
-  ck_assert_ptr_ne(Adev, NULL);                                   \
-  RESdev = gpudata_alloc(ctx, (outsize), NULL, 0, &err);          \
-  ck_assert_ptr_ne(RESdev, NULL);
+#define INIT_ARRAYS(insize, outsize)                     \
+  int err;                                               \
+  void *Av, *RESv, *EXPv;                                \
+  gpudata *Adev, *RESdev;                                \
+                                                         \
+  Av = calloc((insize), sizeof(char));                   \
+  if (Av == NULL)                                        \
+    ck_abort_msg("system memory allocation failed");     \
+  RESv = calloc((outsize), sizeof(char));                \
+  if (RESv == NULL) {                                    \
+    free(Av);                                            \
+    ck_abort_msg("system memory allocation failed");     \
+  }                                                      \
+  EXPv = calloc((outsize), sizeof(char));                \
+  if (EXPv == NULL) {                                    \
+    free(Av);                                            \
+    free(RESv);                                          \
+    ck_abort_msg("system memory allocation failed");     \
+  }                                                      \
+  Adev = gpudata_alloc(ctx, (insize), NULL, 0, &err);    \
+  if (Adev == NULL) {                                    \
+    free(Av);                                            \
+    free(RESv);                                          \
+    free(EXPv);                                          \
+    ck_abort_msg(gpucontext_error(ctx, err));            \
+  }                                                      \
+  RESdev = gpudata_alloc(ctx, (outsize), NULL, 0, &err); \
+  if (RESdev == NULL) {                                  \
+    free(Av);                                            \
+    free(RESv);                                          \
+    free(EXPv);                                          \
+    gpudata_release(Adev);                               \
+    ck_abort_msg(gpucontext_error(ctx, err));            \
+  }
 
 #define DESTROY_ARRAYS() \
   free(Av);              \
@@ -107,7 +123,7 @@ END_TEST
 
 #define TEST_REDUCE(systype, gatype, mpitype, coloptype, epsilon, print)       \
   START_TEST(test_gpucomm_reduce_##gatype##_##coloptype) {                     \
-    systype* A, * RES, * EXP;                                                  \
+    systype *A, *RES, *EXP;                                                    \
     int i, count;                                                              \
     INIT_ARRAYS(SIZE, SIZE)                                                    \
                                                                                \
@@ -193,12 +209,10 @@ TEST_REDUCE_FAIL(datatype, SIZE / sizeof(int), -1, GA_SUM, 0, GA_INVALID_ERROR)
 TEST_REDUCE_FAIL(optype, SIZE / sizeof(int), GA_INT, -1, 0, GA_INVALID_ERROR)
 TEST_REDUCE_FAIL(src_offset, SIZE / sizeof(int), GA_INT, GA_SUM,
                  SIZE - sizeof(int), GA_VALUE_ERROR)
-TEST_REDUCE_FAIL(elemcount, (size_t)INT_MAX + 1, GA_INT, GA_SUM, 0,
-                 GA_XLARGE_ERROR)
 
 #define TEST_ALL_REDUCE(systype, gatype, mpitype, coloptype, epsilon, print) \
   START_TEST(test_gpucomm_all_reduce_##gatype##_##coloptype) {               \
-    systype* A, * RES, * EXP;                                                \
+    systype *A, *RES, *EXP;                                                  \
     systype res;                                                             \
     int i, count;                                                            \
     INIT_ARRAYS(SIZE, SIZE)                                                  \
@@ -287,13 +301,11 @@ TEST_ALL_REDUCE_FAIL(src_offset, SIZE / sizeof(int), GA_INT, GA_SUM,
                      SIZE - sizeof(int), 0, GA_VALUE_ERROR)
 TEST_ALL_REDUCE_FAIL(dest_offset, SIZE / sizeof(int), GA_INT, GA_SUM, 0,
                      SIZE - sizeof(int), GA_VALUE_ERROR)
-TEST_ALL_REDUCE_FAIL(elemcount, (size_t)INT_MAX + 1, GA_INT, GA_SUM, 0, 0,
-                     GA_XLARGE_ERROR)
 
 #define TEST_REDUCE_SCATTER(systype, gatype, mpitype, coloptype, epsilon,    \
                             print)                                           \
   START_TEST(test_gpucomm_reduce_scatter_##gatype##_##coloptype) {           \
-    systype* A, * RES, * EXP;                                                \
+    systype *A, *RES, *EXP;                                                  \
     systype res;                                                             \
     int i, count;                                                            \
     int recvcount;                                                           \
@@ -390,12 +402,10 @@ TEST_REDUCE_SCATTER_FAIL(src_offset, outcount, GA_INT, GA_SUM,
                          SIZE - sizeof(int), 0, GA_VALUE_ERROR)
 TEST_REDUCE_SCATTER_FAIL(dest_offset, outcount, GA_INT, GA_SUM, 0,
                          SIZE / comm_ndev - sizeof(int), GA_VALUE_ERROR)
-TEST_REDUCE_SCATTER_FAIL(elemcount, (size_t)INT_MAX + 1, GA_INT, GA_SUM, 0, 0,
-                         GA_XLARGE_ERROR)
 
 #define TEST_BROADCAST(systype, gatype, mpitype, epsilon, print)             \
   START_TEST(test_gpucomm_broadcast_##gatype) {                              \
-    systype* RES, * EXP;                                                     \
+    systype *RES, *EXP;                                                      \
     systype res;                                                             \
     int i, count;                                                            \
     INIT_ARRAYS(SIZE, SIZE)                                                  \
@@ -459,12 +469,10 @@ TEST_BROADCAST(ulong, ULONG, UNSIGNED_LONG, 0, PRINTVUL)
 TEST_BROADCAST_FAIL(datatype, SIZE / sizeof(int), -1, 0, GA_INVALID_ERROR)
 TEST_BROADCAST_FAIL(src_offset, SIZE / sizeof(int), GA_INT, SIZE - sizeof(int),
                     GA_VALUE_ERROR)
-TEST_BROADCAST_FAIL(elemcount, (size_t)INT_MAX + 1, GA_INT, 0,
-                    GA_XLARGE_ERROR)
 
 #define TEST_ALL_GATHER(systype, gatype, mpitype, epsilon, print)             \
   START_TEST(test_gpucomm_all_gather_##gatype) {                              \
-    systype* A, * RES, * EXP;                                                 \
+    systype *A, *RES, *EXP;                                                   \
     systype res;                                                              \
     int i, count, sendcount;                                                  \
     INIT_ARRAYS(SIZE / comm_ndev, SIZE)                                       \
@@ -535,8 +543,6 @@ TEST_ALL_GATHER_FAIL(src_offset, incount, GA_INT,
                      SIZE / comm_ndev - sizeof(int), 0, GA_VALUE_ERROR)
 TEST_ALL_GATHER_FAIL(dest_offset, incount, GA_INT, 0, SIZE - sizeof(int),
                      GA_VALUE_ERROR)
-TEST_ALL_GATHER_FAIL(elemcount, (size_t)INT_MAX + 1, GA_INT, 0, 0,
-                     GA_XLARGE_ERROR)
 
 Suite* get_suite(void) {
   Suite* s;
@@ -587,7 +593,6 @@ Suite* get_suite(void) {
   tcase_add_test(redf, test_gpucomm_reduce_fail_datatype);
   tcase_add_test(redf, test_gpucomm_reduce_fail_optype);
   tcase_add_test(redf, test_gpucomm_reduce_fail_src_offset);
-  tcase_add_test(redf, test_gpucomm_reduce_fail_elemcount);
 
   areds = tcase_create("test_all_reduce");
   tcase_add_unchecked_fixture(areds, setup_comm, teardown_comm);
@@ -618,7 +623,6 @@ Suite* get_suite(void) {
   tcase_add_test(aredf, test_gpucomm_all_reduce_fail_optype);
   tcase_add_test(aredf, test_gpucomm_all_reduce_fail_src_offset);
   tcase_add_test(aredf, test_gpucomm_all_reduce_fail_dest_offset);
-  tcase_add_test(aredf, test_gpucomm_all_reduce_fail_elemcount);
 
   redscs = tcase_create("test_reduce_scatter");
   tcase_add_unchecked_fixture(redscs, setup_comm, teardown_comm);
@@ -649,7 +653,6 @@ Suite* get_suite(void) {
   tcase_add_test(redscf, test_gpucomm_reduce_scatter_fail_optype);
   tcase_add_test(redscf, test_gpucomm_reduce_scatter_fail_src_offset);
   tcase_add_test(redscf, test_gpucomm_reduce_scatter_fail_dest_offset);
-  tcase_add_test(redscf, test_gpucomm_reduce_scatter_fail_elemcount);
 
   bcasts = tcase_create("test_broadcast");
   tcase_add_unchecked_fixture(bcasts, setup_comm, teardown_comm);
@@ -664,7 +667,6 @@ Suite* get_suite(void) {
   tcase_add_unchecked_fixture(bcastf, setup_comm, teardown_comm);
   tcase_add_test(bcastf, test_gpucomm_broadcast_fail_datatype);
   tcase_add_test(bcastf, test_gpucomm_broadcast_fail_src_offset);
-  tcase_add_test(bcastf, test_gpucomm_broadcast_fail_elemcount);
 
   agats = tcase_create("test_all_gather");
   tcase_add_unchecked_fixture(agats, setup_comm, teardown_comm);
@@ -680,7 +682,6 @@ Suite* get_suite(void) {
   tcase_add_test(agatf, test_gpucomm_all_gather_fail_datatype);
   tcase_add_test(agatf, test_gpucomm_all_gather_fail_src_offset);
   tcase_add_test(agatf, test_gpucomm_all_gather_fail_dest_offset);
-  tcase_add_test(agatf, test_gpucomm_all_gather_fail_elemcount);
 
   suite_add_tcase(s, helps);
   suite_add_tcase(s, reds);
